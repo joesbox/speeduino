@@ -2161,6 +2161,41 @@ void setPinMapping(byte boardID)
       break;
     #endif
 
+    #if defined(CORE_TEENSY35)
+    case 54:
+      //Pin mappings for JuiceBox 2 ECU
+      pinInjector1 = 37; //Output pin injector 1 is on
+      pinInjector2 = 36; //Output pin injector 2 is on
+      pinInjector3 = 35; //Output pin injector 3 is on
+      pinInjector4 = 34; //Output pin injector 4 is on
+      pinCoil1 = 39; //Pin for coil 1
+      pinCoil2 = 38; //Pin for coil 2
+      pinCoil3 = 21; //Pin for coil 3 (NOT USED)
+      pinCoil4 = 20; //Pin for coil 4 (NOT USED)
+      pinTrigger = 22; //The CAS pin
+      pinTrigger2 = 23; //The Cam Sensor pin
+      pinTPS = A1; //TPS input pin
+      pinMAP = A13; //MAP sensor pin
+      pinIAT = A2; //IAT sensor pin
+      pinCLT = A3; //CLT sensor pin
+      pinO2 = A4; //O2 sensor pin
+      pinO2_2 = A5; //O2 sensor pin (second sensor - AUX)
+      pinBat = A0; //Battery reference voltage pin
+      pinTachOut = 27; //Tacho output pin
+      pinIdle1 = 29; //Single wire idle control
+      pinBoost = 30; //Boost control
+      pinFuelPump = 33; //Fuel pump output
+      pinStepperDir = 12; //Direction pin for DRV8825 driver
+      pinStepperStep = 24; //Step pin for DRV8825 driver
+      pinStepperEnable = 25; //Enable pin for DRV8825 driver
+      pinLaunch = 31; //Can be overwritten below
+      pinFan = 26; //Pin for the fan output
+      pinSpareHOut1 = 28; // high current output spare1
+      pinSpareHOut2 = 12; // high current output spare2
+      pinSpareLOut1 = 11; //low current output spare1
+      break;
+    #endif
+
     case 55:
       #if defined(CORE_TEENSY)
       //Pin mappings for the DropBear

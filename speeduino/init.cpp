@@ -7,6 +7,7 @@
 #include "updates.h"
 #include "speeduino.h"
 #include "timers.h"
+#include "comms.h"
 #include "comms_secondary.h"
 #include "comms_CAN.h"
 #include "utilities.h"
@@ -28,6 +29,50 @@
   #include "SD_logger.h"
   #include "rtc_common.h"
 #endif
+
+#if defined(CORE_AVR)
+#pragma GCC push_options
+// This minimizes RAM usage at no performance cost
+#pragma GCC optimize ("Os") 
+#endif
+
+#if !defined(UNIT_TEST)
+static inline 
+#endif
+void construct2dTables(void) {
+  //Repoint the 2D table structs to the config pages that were just loaded
+  construct2dTable(taeTable,                  _countof(configPage4.taeValues),                  configPage4.taeValues,                  configPage4.taeBins);
+  construct2dTable(maeTable,                  _countof(configPage4.maeRates),                   configPage4.maeRates,                   configPage4.maeBins);
+  construct2dTable(WUETable,                  _countof(configPage2.wueValues),                  configPage2.wueValues,                  configPage4.wueBins);
+  construct2dTable(ASETable,                  _countof(configPage2.asePct),                     configPage2.asePct,                     configPage2.aseBins);
+  construct2dTable(ASECountTable,             _countof(configPage2.aseCount),                   configPage2.aseCount,                   configPage2.aseBins);
+  construct2dTable(PrimingPulseTable,         _countof(configPage2.primePulse),                 configPage2.primePulse,                 configPage2.primeBins);
+  construct2dTable(crankingEnrichTable,       _countof(configPage10.crankingEnrichValues),      configPage10.crankingEnrichValues,      configPage10.crankingEnrichBins);
+  construct2dTable(dwellVCorrectionTable,     _countof(configPage4.dwellCorrectionValues),      configPage4.dwellCorrectionValues,      configPage6.voltageCorrectionBins);
+  construct2dTable(injectorVCorrectionTable,  _countof(configPage6.injVoltageCorrectionValues), configPage6.injVoltageCorrectionValues, configPage6.voltageCorrectionBins);
+  construct2dTable(IATDensityCorrectionTable, _countof(configPage6.airDenRates),                configPage6.airDenRates,                configPage6.airDenBins);
+  construct2dTable(baroFuelTable,             _countof(configPage4.baroFuelValues),             configPage4.baroFuelValues,             configPage4.baroFuelBins);
+  construct2dTable(IATRetardTable,            _countof(configPage4.iatRetValues),               configPage4.iatRetValues,               configPage4.iatRetBins);
+  construct2dTable(CLTAdvanceTable,           _countof(configPage4.cltAdvValues),               configPage4.cltAdvValues,               configPage4.cltAdvBins);
+  construct2dTable(idleTargetTable,           _countof(configPage6.iacCLValues),                configPage6.iacCLValues,                configPage6.iacBins);
+  construct2dTable(idleAdvanceTable,          _countof(configPage4.idleAdvValues),              configPage4.idleAdvValues,              configPage4.idleAdvBins);
+  construct2dTable(rotarySplitTable,          _countof(configPage10.rotarySplitValues),         configPage10.rotarySplitValues,         configPage10.rotarySplitBins);
+  construct2dTable(flexFuelTable,             _countof(configPage10.flexFuelAdj),               configPage10.flexFuelAdj,               configPage10.flexFuelBins);
+  construct2dTable(flexAdvTable,              _countof(configPage10.flexAdvAdj),                configPage10.flexAdvAdj,                configPage10.flexAdvBins);
+  construct2dTable(fuelTempTable,             _countof(configPage10.fuelTempValues),            configPage10.fuelTempValues,            configPage10.fuelTempBins);
+  construct2dTable(oilPressureProtectTable,   _countof(configPage10.oilPressureProtMins),       configPage10.oilPressureProtMins,       configPage10.oilPressureProtRPM);
+  construct2dTable(coolantProtectTable,       _countof(configPage9.coolantProtRPM),             configPage9.coolantProtRPM,             configPage9.coolantProtTemp);
+  construct2dTable(fanPWMTable,               _countof(configPage9.PWMFanDuty),                 configPage9.PWMFanDuty,                 configPage6.fanPWMBins);
+  construct2dTable(wmiAdvTable,               _countof(configPage10.wmiAdvAdj),                 configPage10.wmiAdvAdj,                 configPage10.wmiAdvBins);
+  construct2dTable(rollingCutTable,           _countof(configPage15.rollingProtCutPercent),     configPage15.rollingProtCutPercent,     configPage15.rollingProtRPMDelta);
+  construct2dTable(injectorAngleTable,        _countof(configPage2.injAng),                     configPage2.injAng,                     configPage2.injAngRPM);
+  construct2dTable(flexBoostTable,            _countof(configPage10.flexBoostAdj),              configPage10.flexBoostAdj,              configPage10.flexBoostBins);
+  construct2dTable(knockWindowStartTable,      _countof(configPage10.knock_window_angle),        configPage10.knock_window_angle, configPage10.knock_window_rpms);
+  construct2dTable(knockWindowDurationTable,   _countof(configPage10.knock_window_dur),          configPage10.knock_window_dur,   configPage10.knock_window_rpms);
+  construct2dTable(cltCalibrationTable,       _countof(cltCalibration_values), cltCalibration_values, cltCalibration_bins);
+  construct2dTable(iatCalibrationTable,       _countof(iatCalibration_values), iatCalibration_values, iatCalibration_bins);
+  construct2dTable(o2CalibrationTable,        _countof(o2Calibration_values),  o2Calibration_values,  o2Calibration_bins);
+}
 
 /** Initialise Speeduino for the main loop.
  * Top level init entry point for all initialisations:
@@ -66,7 +111,7 @@ void initialiseAll(void)
     ***********************************************************************************************************
     * EEPROM reset
     */
-    #if defined(EEPROM_RESET_PIN)
+    #if defined(EEPROM_RESET_PIN) && !defined(UNIT_TEST)
     uint32_t start_time = millis();
     byte exit_erase_loop = false; 
     pinMode(EEPROM_RESET_PIN, INPUT_PULLUP);  
@@ -114,197 +159,34 @@ void initialiseAll(void)
     
   #ifdef SD_LOGGING
     initRTC();
-    initSD();
+    if(configPage13.onboard_log_file_style) { initSD(); }
   #endif
 
+//Teensy 4.1 does not require .begin() to be called. This introduces a 700ms delay on startup time whilst USB is enumerated if it is called
+#ifndef CORE_TEENSY41
     Serial.begin(115200);
+#endif
+    pPrimarySerial = &Serial; //Default to standard Serial interface
     BIT_SET(currentStatus.status4, BIT_STATUS4_ALLOW_LEGACY_COMMS); //Flag legacy comms as being allowed on startup
 
     //Repoint the 2D table structs to the config pages that were just loaded
-    taeTable.valueSize = SIZE_BYTE; //Set this table to use byte values
-    taeTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    taeTable.xSize = 4;
-    taeTable.values = configPage4.taeValues;
-    taeTable.axisX = configPage4.taeBins;
-    maeTable.valueSize = SIZE_BYTE; //Set this table to use byte values
-    maeTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    maeTable.xSize = 4;
-    maeTable.values = configPage4.maeRates;
-    maeTable.axisX = configPage4.maeBins;
-    WUETable.valueSize = SIZE_BYTE; //Set this table to use byte values
-    WUETable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    WUETable.xSize = 10;
-    WUETable.values = configPage2.wueValues;
-    WUETable.axisX = configPage4.wueBins;
-    ASETable.valueSize = SIZE_BYTE;
-    ASETable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    ASETable.xSize = 4;
-    ASETable.values = configPage2.asePct;
-    ASETable.axisX = configPage2.aseBins;
-    ASECountTable.valueSize = SIZE_BYTE;
-    ASECountTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    ASECountTable.xSize = 4;
-    ASECountTable.values = configPage2.aseCount;
-    ASECountTable.axisX = configPage2.aseBins;
-    PrimingPulseTable.valueSize = SIZE_BYTE;
-    PrimingPulseTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    PrimingPulseTable.xSize = 4;
-    PrimingPulseTable.values = configPage2.primePulse;
-    PrimingPulseTable.axisX = configPage2.primeBins;
-    crankingEnrichTable.valueSize = SIZE_BYTE;
-    crankingEnrichTable.axisSize = SIZE_BYTE;
-    crankingEnrichTable.xSize = 4;
-    crankingEnrichTable.values = configPage10.crankingEnrichValues;
-    crankingEnrichTable.axisX = configPage10.crankingEnrichBins;
-
-    dwellVCorrectionTable.valueSize = SIZE_BYTE;
-    dwellVCorrectionTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    dwellVCorrectionTable.xSize = 6;
-    dwellVCorrectionTable.values = configPage4.dwellCorrectionValues;
-    dwellVCorrectionTable.axisX = configPage6.voltageCorrectionBins;
-    injectorVCorrectionTable.valueSize = SIZE_BYTE;
-    injectorVCorrectionTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    injectorVCorrectionTable.xSize = 6;
-    injectorVCorrectionTable.values = configPage6.injVoltageCorrectionValues;
-    injectorVCorrectionTable.axisX = configPage6.voltageCorrectionBins;
-    injectorAngleTable.valueSize = SIZE_INT;
-    injectorAngleTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    injectorAngleTable.xSize = 4;
-    injectorAngleTable.values = configPage2.injAng;
-    injectorAngleTable.axisX = configPage2.injAngRPM;
-    IATDensityCorrectionTable.valueSize = SIZE_BYTE;
-    IATDensityCorrectionTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    IATDensityCorrectionTable.xSize = 9;
-    IATDensityCorrectionTable.values = configPage6.airDenRates;
-    IATDensityCorrectionTable.axisX = configPage6.airDenBins;
-    baroFuelTable.valueSize = SIZE_BYTE;
-    baroFuelTable.axisSize = SIZE_BYTE;
-    baroFuelTable.xSize = 8;
-    baroFuelTable.values = configPage4.baroFuelValues;
-    baroFuelTable.axisX = configPage4.baroFuelBins;
-    IATRetardTable.valueSize = SIZE_BYTE;
-    IATRetardTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    IATRetardTable.xSize = 6;
-    IATRetardTable.values = configPage4.iatRetValues;
-    IATRetardTable.axisX = configPage4.iatRetBins;
-    CLTAdvanceTable.valueSize = SIZE_BYTE;
-    CLTAdvanceTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    CLTAdvanceTable.xSize = 6;
-    CLTAdvanceTable.values = (byte*)configPage4.cltAdvValues;
-    CLTAdvanceTable.axisX = configPage4.cltAdvBins;
-    idleTargetTable.valueSize = SIZE_BYTE;
-    idleTargetTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    idleTargetTable.xSize = 10;
-    idleTargetTable.values = configPage6.iacCLValues;
-    idleTargetTable.axisX = configPage6.iacBins;
-    idleAdvanceTable.valueSize = SIZE_BYTE;
-    idleAdvanceTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    idleAdvanceTable.xSize = 6;
-    idleAdvanceTable.values = (byte*)configPage4.idleAdvValues;
-    idleAdvanceTable.axisX = configPage4.idleAdvBins;
-    rotarySplitTable.valueSize = SIZE_BYTE;
-    rotarySplitTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    rotarySplitTable.xSize = 8;
-    rotarySplitTable.values = configPage10.rotarySplitValues;
-    rotarySplitTable.axisX = configPage10.rotarySplitBins;
-
-    flexFuelTable.valueSize = SIZE_BYTE;
-    flexFuelTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    flexFuelTable.xSize = 6;
-    flexFuelTable.values = configPage10.flexFuelAdj;
-    flexFuelTable.axisX = configPage10.flexFuelBins;
-    flexAdvTable.valueSize = SIZE_BYTE;
-    flexAdvTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    flexAdvTable.xSize = 6;
-    flexAdvTable.values = configPage10.flexAdvAdj;
-    flexAdvTable.axisX = configPage10.flexAdvBins;
-    flexBoostTable.valueSize = SIZE_INT;
-    flexBoostTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins (NOTE THIS IS DIFFERENT TO THE VALUES!!)
-    flexBoostTable.xSize = 6;
-    flexBoostTable.values = configPage10.flexBoostAdj;
-    flexBoostTable.axisX = configPage10.flexBoostBins;
-    fuelTempTable.valueSize = SIZE_BYTE;
-    fuelTempTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    fuelTempTable.xSize = 6;
-    fuelTempTable.values = configPage10.fuelTempValues;
-    fuelTempTable.axisX = configPage10.fuelTempBins;
-
-    knockWindowStartTable.valueSize = SIZE_BYTE;
-    knockWindowStartTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    knockWindowStartTable.xSize = 6;
-    knockWindowStartTable.values = configPage10.knock_window_angle;
-    knockWindowStartTable.axisX = configPage10.knock_window_rpms;
-    knockWindowDurationTable.valueSize = SIZE_BYTE;
-    knockWindowDurationTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    knockWindowDurationTable.xSize = 6;
-    knockWindowDurationTable.values = configPage10.knock_window_dur;
-    knockWindowDurationTable.axisX = configPage10.knock_window_rpms;
-
-    oilPressureProtectTable.valueSize = SIZE_BYTE;
-    oilPressureProtectTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    oilPressureProtectTable.xSize = 4;
-    oilPressureProtectTable.values = configPage10.oilPressureProtMins;
-    oilPressureProtectTable.axisX = configPage10.oilPressureProtRPM;
-
-    coolantProtectTable.valueSize = SIZE_BYTE;
-    coolantProtectTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    coolantProtectTable.xSize = 6;
-    coolantProtectTable.values = configPage9.coolantProtRPM;
-    coolantProtectTable.axisX = configPage9.coolantProtTemp;
-
-
-    fanPWMTable.valueSize = SIZE_BYTE;
-    fanPWMTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    fanPWMTable.xSize = 4;
-    fanPWMTable.values = configPage9.PWMFanDuty;
-    fanPWMTable.axisX = configPage6.fanPWMBins;
-
-    rollingCutTable.valueSize = SIZE_BYTE;
-    rollingCutTable.axisSize = SIZE_SIGNED_BYTE; //X axis is SIGNED for this table. 
-    rollingCutTable.xSize = 4;
-    rollingCutTable.values = configPage15.rollingProtCutPercent;
-    rollingCutTable.axisX = configPage15.rollingProtRPMDelta;
-
-    wmiAdvTable.valueSize = SIZE_BYTE;
-    wmiAdvTable.axisSize = SIZE_BYTE; //Set this table to use byte axis bins
-    wmiAdvTable.xSize = 6;
-    wmiAdvTable.values = configPage10.wmiAdvAdj;
-    wmiAdvTable.axisX = configPage10.wmiAdvBins;
-
-    cltCalibrationTable.valueSize = SIZE_INT;
-    cltCalibrationTable.axisSize = SIZE_INT;
-    cltCalibrationTable.xSize = 32;
-    cltCalibrationTable.values = cltCalibration_values;
-    cltCalibrationTable.axisX = cltCalibration_bins;
-
-    iatCalibrationTable.valueSize = SIZE_INT;
-    iatCalibrationTable.axisSize = SIZE_INT;
-    iatCalibrationTable.xSize = 32;
-    iatCalibrationTable.values = iatCalibration_values;
-    iatCalibrationTable.axisX = iatCalibration_bins;
-
-    o2CalibrationTable.valueSize = SIZE_BYTE;
-    o2CalibrationTable.axisSize = SIZE_INT;
-    o2CalibrationTable.xSize = 32;
-    o2CalibrationTable.values = o2Calibration_values;
-    o2CalibrationTable.axisX = o2Calibration_bins;
+    construct2dTables();
     
     //Setup the calibration tables
-    loadCalibration();
-
-    
+    loadCalibration();   
 
     //Set the pin mappings
     if((configPage2.pinMapping == 255) || (configPage2.pinMapping == 0)) //255 = EEPROM value in a blank AVR; 0 = EEPROM value in new FRAM
     {
       //First time running on this board
       resetConfigPages();
-      configPage4.triggerTeeth = 4; //Avoiddiv by 0 when start decoders
       setPinMapping(3); //Force board to v0.4
     }
     else { setPinMapping(configPage2.pinMapping); }
 
-    #if defined(NATIVE_CAN_AVAILABLE)
+    // Repeatedly initialising the CAN bus hangs the system when
+    // running initialisation tests on Teensy 3.5
+    #if defined(NATIVE_CAN_AVAILABLE) && !defined(UNIT_TEST)
       initCAN();
     #endif
 
@@ -357,18 +239,31 @@ void initialiseAll(void)
     initialiseCorrections();
     BIT_CLEAR(currentStatus.engineProtectStatus, PROTECT_IO_ERROR); //Clear the I/O error bit. The bit will be set in initialiseADC() if there is problem in there.
     initialiseADC();
+    initialiseMAPBaro();
     initialiseProgrammableIO();
 
     //Check whether the flex sensor is enabled and if so, attach an interrupt for it
-    if(configPage2.flexEnabled > 0)
+    if( (configPage2.flexEnabled > 0) && !pinIsOutput(pinFlex) )
     {
-      attachInterrupt(digitalPinToInterrupt(pinFlex), flexPulse, CHANGE);
+      if(!pinIsReserved(pinFlex)) { attachInterrupt(digitalPinToInterrupt(pinFlex), flexPulse, CHANGE); }
       currentStatus.ethanolPct = 0;
     }
     //Same as above, but for the VSS input
-    if(configPage2.vssMode > 1) // VSS modes 2 and 3 are interrupt drive (Mode 1 is CAN)
+    if( (configPage2.vssMode > 1) && !pinIsOutput(pinVSS) ) // VSS modes 2 and 3 are interrupt drive (Mode 1 is CAN)
     {
-      attachInterrupt(digitalPinToInterrupt(pinVSS), vssPulse, RISING);
+      if(!pinIsReserved(pinVSS)) { attachInterrupt(digitalPinToInterrupt(pinVSS), vssPulse, RISING); }
+    }
+    //As above but for knock pulses
+    if( (configPage10.knock_mode == KNOCK_MODE_DIGITAL) && !pinIsOutput(configPage10.knock_pin) )
+    {
+      if(configPage10.knock_pullup) { pinMode(configPage10.knock_pin, INPUT_PULLUP); }
+      else { pinMode(configPage10.knock_pin, INPUT); }
+
+      if(!pinIsReserved(configPage10.knock_pin)) 
+      { 
+        if(configPage10.knock_trigger == KNOCK_TRIGGER_HIGH) { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, RISING); }
+        else { attachInterrupt(digitalPinToInterrupt(configPage10.knock_pin), knockPulse, FALLING); }
+      }
     }
 
     //Once the configs have been loaded, a number of one time calculations can be completed
@@ -421,11 +316,7 @@ void initialiseAll(void)
     fixedCrankingOverride = 0;
     timer5_overflow_count = 0;
     toothHistoryIndex = 0;
-    toothLastToothTime = 0;
-
-    //Lookup the current MAP reading for barometric pressure
-    instanteneousMAPReading();
-    readBaro();
+    resetDecoder();
     
     noInterrupts();
     initialiseTriggers();
@@ -727,7 +618,7 @@ void initialiseAll(void)
               channel8InjDegrees = channel4InjDegrees;
             #else
               //This is an invalid config as there are not enough outputs to support sequential + staging
-              //Put the staging output to the non-existant channel 5
+              //Put the staging output to the non-existent channel 5
               #if (INJ_CHANNELS >= 5)
               maxInjOutputs = 5;
               channel5InjDegrees = channel1InjDegrees;
@@ -1349,7 +1240,7 @@ void initialiseAll(void)
     readTPS(false); // Need to read tps to detect flood clear state
 
     /* tacho sweep function. */
-    //tachoStatus.tachoSweepEnabled = (configPage2.useTachoSweep > 0);
+    currentStatus.tachoSweepEnabled = (configPage2.useTachoSweep > 0);
     /* SweepMax is stored as a byte, RPM/100. divide by 60 to convert min to sec (net 5/3).  Multiply by ignition pulses per rev.
        tachoSweepIncr is also the number of tach pulses per second */
     tachoSweepIncr = configPage2.tachoSweepMaxRPM * maxIgnOutputs * 5 / 3;
@@ -1368,6 +1259,8 @@ void setPinMapping(byte boardID)
   //Force set defaults. Will be overwritten below if needed.
   injectorOutputControl = OUTPUT_CONTROL_DIRECT;
   ignitionOutputControl = OUTPUT_CONTROL_DIRECT;
+
+  if( configPage4.triggerTeeth == 0 ) { configPage4.triggerTeeth = 4; } //Avoid potential divide by 0 when starting decoders
 
   switch (boardID)
   {
@@ -1539,7 +1432,7 @@ void setPinMapping(byte boardID)
 
         pinTrigger = 20; //The CAS pin
         pinTrigger2 = 21; //The Cam Sensor pin
-        pinTrigger3 = 23;
+        pinTrigger3 = 24;
 
         pinStepperDir = 34;
         pinStepperStep = 35;
@@ -2194,7 +2087,7 @@ void setPinMapping(byte boardID)
       pinIdle2 = 14; //2 wire idle control PLACEHOLDER value for now
       pinFuelPump = 3; //Fuel pump output
       pinVVT_1 = 15; //Default VVT output PLACEHOLDER value for now
-      pinBoost = 13; //Boost control
+      pinBoost = 5; //Boost control
       pinSpareLOut1 = 49; //enable Wideband Lambda Heater
       pinSpareLOut2 = 16; //low current output spare2 PLACEHOLDER value for now
       pinSpareLOut3 = 17; //low current output spare3 PLACEHOLDER value for now
@@ -2408,7 +2301,7 @@ void setPinMapping(byte boardID)
       pinInjector5 = 9; //CS for MC33810 2
       pinInjector6 = 9; //CS for MC33810 3
 
-      //Dummy pins, without thes pin 0 (Serial1 RX) gets overwritten
+      //Dummy pins, without these pin 0 (Serial1 RX) gets overwritten
       pinCoil1 = 40;
       pinCoil2 = 41;
       /*
@@ -2420,7 +2313,7 @@ void setPinMapping(byte boardID)
       
       pinTrigger = 19; //The CAS pin
       pinTrigger2 = 18; //The Cam Sensor pin
-      pinTrigger3 = 22; //Uses one of the protected spare digitial inputs. This must be set or Serial1 (Pin 0) gets broken
+      pinTrigger3 = 22; //Uses one of the protected spare digital inputs. This must be set or Serial1 (Pin 0) gets broken
       pinFlex = A16; // Flex sensor
       pinMAP = A1; //MAP sensor pin
       pinBaro = A0; //Baro sensor pin
@@ -2482,7 +2375,7 @@ void setPinMapping(byte boardID)
         pinTrigger2 = 21; //The Cam Sensor pin
 
         pinFuelPump = 5; //Fuel pump output
-        pinTachOut = 8; //Tacho output pin
+        pinTachOut = 0; //Tacho output pin
 
         pinResetControl = 49; //PLaceholder only. Cannot use 42-47 as these are the SD card
 
@@ -2603,7 +2496,7 @@ void setPinMapping(byte boardID)
         // = PB4;  //(DO NOT USE FOR SPEEDUINO) SPI1_MISO FLASH CHIP
         // = PB5;  //(DO NOT USE FOR SPEEDUINO) SPI1_MOSI FLASH CHIP
         // = PB6;  //NRF_CE
-        // = PB7;  //NRF_CS
+        pinCoil6 = PB7;  //NRF_CS
         // = PB8;  //NRF_IRQ
         pinCoil2 = PB9; //
         // = PB9;  //
@@ -2893,56 +2786,55 @@ void setPinMapping(byte boardID)
       break;
   }
 
-  //Setup any devices that are using selectable pins
-
-  if ( (configPage6.launchPin != 0) && (configPage6.launchPin < BOARD_MAX_IO_PINS) ) { pinLaunch = pinTranslate(configPage6.launchPin); }
-  if ( (configPage4.ignBypassPin != 0) && (configPage4.ignBypassPin < BOARD_MAX_IO_PINS) ) { pinIgnBypass = pinTranslate(configPage4.ignBypassPin); }
-  if ( (configPage2.tachoPin != 0) && (configPage2.tachoPin < BOARD_MAX_IO_PINS) ) { pinTachOut = pinTranslate(configPage2.tachoPin); }
-  if ( (configPage4.fuelPumpPin != 0) && (configPage4.fuelPumpPin < BOARD_MAX_IO_PINS) ) { pinFuelPump = pinTranslate(configPage4.fuelPumpPin); }
-  if ( (configPage6.fanPin != 0) && (configPage6.fanPin < BOARD_MAX_IO_PINS) ) { pinFan = pinTranslate(configPage6.fanPin); }
-  if ( (configPage6.boostPin != 0) && (configPage6.boostPin < BOARD_MAX_IO_PINS) ) { pinBoost = pinTranslate(configPage6.boostPin); }
-  if ( (configPage6.vvt1Pin != 0) && (configPage6.vvt1Pin < BOARD_MAX_IO_PINS) ) { pinVVT_1 = pinTranslate(configPage6.vvt1Pin); }
+  //Setup any devices that are using selectable pins, pins will be reassigned only if isn't already in use or is protected
   if ( (configPage6.useExtBaro != 0) && (configPage6.baroPin < BOARD_MAX_IO_PINS) ) { pinBaro = pinTranslateAnalog(configPage6.baroPin); }
-  if ( (configPage6.useEMAP != 0) && (configPage10.EMAPPin < BOARD_MAX_IO_PINS) ) { pinEMAP = pinTranslateAnalog(configPage10.EMAPPin); }
-  if ( (configPage10.fuel2InputPin != 0) && (configPage10.fuel2InputPin < BOARD_MAX_IO_PINS) ) { pinFuel2Input = pinTranslate(configPage10.fuel2InputPin); }
-  if ( (configPage10.spark2InputPin != 0) && (configPage10.spark2InputPin < BOARD_MAX_IO_PINS) ) { pinSpark2Input = pinTranslate(configPage10.spark2InputPin); }
-  if ( (configPage2.vssPin != 0) && (configPage2.vssPin < BOARD_MAX_IO_PINS) ) { pinVSS = pinTranslate(configPage2.vssPin); }
   if ( (configPage10.fuelPressureEnable) && (configPage10.fuelPressurePin < BOARD_MAX_IO_PINS) ) { pinFuelPressure = pinTranslateAnalog(configPage10.fuelPressurePin); }
   if ( (configPage10.oilPressureEnable) && (configPage10.oilPressurePin < BOARD_MAX_IO_PINS) ) { pinOilPressure = pinTranslateAnalog(configPage10.oilPressurePin); }
+  if ( (configPage6.useEMAP != 0) && (configPage10.EMAPPin < BOARD_MAX_IO_PINS) ) { pinEMAP = pinTranslateAnalog(configPage10.EMAPPin); }
+  pinInputReassign(pinLaunch, configPage6.launchPin);
+  pinInputReassign(pinIgnBypass, configPage4.ignBypassPin);
+  pinOutputReassign(pinTachOut, configPage2.tachoPin);
+  pinOutputReassign(pinFuelPump, configPage4.fuelPumpPin);
+  pinOutputReassign(pinFan, configPage6.fanPin);
+  pinOutputReassign(pinBoost, configPage6.boostPin);
+  pinOutputReassign(pinVVT_1, configPage6.vvt1Pin);
+  pinInputReassign(pinFuel2Input, configPage10.fuel2InputPin);
+  pinInputReassign(pinSpark2Input, configPage10.spark2InputPin);
+  pinOutputReassign(pinVSS, configPage2.vssPin);  
+  pinInputReassign(pinWMIEmpty, configPage10.wmiEmptyPin);
+  pinOutputReassign(pinWMIIndicator, configPage10.wmiIndicatorPin);
+  pinOutputReassign(pinWMIEnabled, configPage10.wmiEnabledPin);
+  pinOutputReassign(pinVVT_2, configPage10.vvt2Pin);
+  if ( (configPage13.onboard_log_trigger_Epin != 0 ) && (configPage13.onboard_log_trigger_Epin != 0) ) { pinOutputReassign(pinSDEnable, configPage13.onboard_log_tr5_Epin_pin); }
   
-  if ( (configPage10.wmiEmptyPin != 0) && (configPage10.wmiEmptyPin < BOARD_MAX_IO_PINS) ) { pinWMIEmpty = pinTranslate(configPage10.wmiEmptyPin); }
-  if ( (configPage10.wmiIndicatorPin != 0) && (configPage10.wmiIndicatorPin < BOARD_MAX_IO_PINS) ) { pinWMIIndicator = pinTranslate(configPage10.wmiIndicatorPin); }
-  if ( (configPage10.wmiEnabledPin != 0) && (configPage10.wmiEnabledPin < BOARD_MAX_IO_PINS) ) { pinWMIEnabled = pinTranslate(configPage10.wmiEnabledPin); }
-  if ( (configPage10.vvt2Pin != 0) && (configPage10.vvt2Pin < BOARD_MAX_IO_PINS) ) { pinVVT_2 = pinTranslate(configPage10.vvt2Pin); }
-  if ( (configPage13.onboard_log_trigger_Epin != 0 ) && (configPage13.onboard_log_trigger_Epin != 0) && (configPage13.onboard_log_tr5_Epin_pin < BOARD_MAX_IO_PINS) ) { pinSDEnable = pinTranslate(configPage13.onboard_log_tr5_Epin_pin); }
-  
-
   //Currently there's no default pin for Idle Up
-  
-  pinIdleUp = pinTranslate(configPage2.idleUpPin);
+  if(!pinInputReassign(pinIdleUp, configPage2.idleUpPin)) { pinIdleUp = BOARD_MAX_IO_PINS; } //Invalid pin, protect current function
 
   //Currently there's no default pin for Idle Up Output
-  pinIdleUpOutput = pinTranslate(configPage2.idleUpOutputPin);
+  if(!pinOutputReassign(pinIdleUpOutput, configPage2.idleUpOutputPin)) { pinIdleUpOutput = BOARD_MAX_IO_PINS; } //Invalid pin, protect current function
 
   //Currently there's no default pin for closed throttle position sensor
-  pinCTPS = pinTranslate(configPage2.CTPSPin);
+  if(!pinInputReassign(pinCTPS, configPage2.CTPSPin)) { pinCTPS = BOARD_MAX_IO_PINS; } //Invalid pin, protect current function
   
   // Air conditioning control initialisation
-  if ((configPage15.airConCompPin != 0) && (configPage15.airConCompPin < BOARD_MAX_IO_PINS) ) { pinAirConComp = pinTranslate(configPage15.airConCompPin); }
-  if ((configPage15.airConFanPin != 0) && (configPage15.airConFanPin < BOARD_MAX_IO_PINS) ) { pinAirConFan = pinTranslate(configPage15.airConFanPin); }
-  if ((configPage15.airConReqPin != 0) && (configPage15.airConReqPin < BOARD_MAX_IO_PINS) ) { pinAirConRequest = pinTranslate(configPage15.airConReqPin); }
-    
+  pinInputReassign(pinAirConComp, configPage15.airConCompPin);
+  pinOutputReassign(pinAirConFan, configPage15.airConFanPin);
+  pinInputReassign(pinAirConRequest, configPage15.airConReqPin);
+
   /* Reset control is a special case. If reset control is enabled, it needs its initial state set BEFORE its pinMode.
      If that doesn't happen and reset control is in "Serial Command" mode, the Arduino will end up in a reset loop
      because the control pin will go low as soon as the pinMode is set to OUTPUT. */
   if ( (configPage4.resetControlConfig != 0) && (configPage4.resetControlPin < BOARD_MAX_IO_PINS) )
   {
-    if (configPage4.resetControlPin!=0U) {
-      pinResetControl = pinTranslate(configPage4.resetControlPin);
+    if( (configPage4.resetControlPin == 0U) || (!pinIsReserved(configPage4.resetControlPin)) )
+    {
+      if (configPage4.resetControlPin != 0U) {
+        pinResetControl = pinTranslate(configPage4.resetControlPin);
+      }
+      resetControl = configPage4.resetControlConfig;
+      setResetControlPinState();
+      pinMode(pinResetControl, OUTPUT);
     }
-    resetControl = configPage4.resetControlConfig;
-    setResetControlPinState();
-    pinMode(pinResetControl, OUTPUT);
   }
   
 
@@ -3076,6 +2968,16 @@ void setPinMapping(byte boardID)
       pinMode(pinBat, INPUT);
       pinMode(pinBaro, INPUT);
     #endif
+  #elif defined(CORE_TEENSY41)
+    //Teensy 4.1 has a weak pull down resistor that needs to be disabled for all analog pins. 
+    pinMode(pinMAP, INPUT_DISABLE);
+    pinMode(pinO2, INPUT_DISABLE);
+    pinMode(pinO2_2, INPUT_DISABLE);
+    pinMode(pinTPS, INPUT_DISABLE);
+    pinMode(pinIAT, INPUT_DISABLE);
+    pinMode(pinCLT, INPUT_DISABLE);
+    pinMode(pinBat, INPUT_DISABLE);
+    pinMode(pinBaro, INPUT_DISABLE);
   #endif
 
   //Each of the below are only set when their relevant function is enabled. This can help prevent pin conflicts that users aren't aware of with unused functions
@@ -3124,10 +3026,10 @@ void setPinMapping(byte boardID)
   {
     pinMode(pinSDEnable, INPUT);
   }
-  if(configPage10.wmiEnabled > 0)
+  if( (configPage10.wmiEnabled > 0) && (!pinIsOutput(pinWMIEnabled)) )
   {
     pinMode(pinWMIEnabled, OUTPUT);
-    if(configPage10.wmiIndicatorEnabled > 0)
+    if( (configPage10.wmiIndicatorEnabled > 0) && (!pinIsReserved(pinWMIIndicator)) )
     {
       pinMode(pinWMIIndicator, OUTPUT);
       if (configPage10.wmiIndicatorPolarity > 0) { digitalWrite(pinWMIIndicator, HIGH); }
@@ -3139,7 +3041,7 @@ void setPinMapping(byte boardID)
     }
   } 
 
-  if((pinAirConComp>0) && ((configPage15.airConEnable) == 1))
+  if( (pinAirConComp>0) && ((configPage15.airConEnable) == 1) && (!pinIsReserved(pinAirConComp)) )
   {
     pinMode(pinAirConComp, OUTPUT);
   }
@@ -3160,7 +3062,7 @@ void setPinMapping(byte boardID)
     }
   }
 
-  if((pinAirConFan > 0) && ((configPage15.airConEnable) == 1) && ((configPage15.airConFanEnabled) == 1))
+  if( (pinAirConFan > 0) && ((configPage15.airConEnable) == 1) && ((configPage15.airConFanEnabled) == 1) && (!pinIsReserved(pinAirConFan)) )
   {
     pinMode(pinAirConFan, OUTPUT);
   }  
@@ -3419,6 +3321,21 @@ void initialiseTriggers(void)
 
       attachInterrupt(triggerInterrupt, triggerHandler, primaryTriggerEdge);
       attachInterrupt(triggerInterrupt2, triggerSecondaryHandler, secondaryTriggerEdge);
+      break;
+
+    case DECODER_HONDA_J32:
+      triggerSetup_HondaJ32();
+      triggerHandler = triggerPri_HondaJ32;
+      triggerSecondaryHandler = triggerSec_HondaJ32;
+      getRPM = getRPM_HondaJ32;
+      getCrankAngle = getCrankAngle_HondaJ32;
+      triggerSetEndTeeth = triggerSetEndTeeth_HondaJ32;
+
+      primaryTriggerEdge = RISING; // Don't honor the config, always use rising edge 
+      secondaryTriggerEdge = RISING; // Unused
+
+      attachInterrupt(triggerInterrupt, triggerHandler, primaryTriggerEdge);
+      attachInterrupt(triggerInterrupt2, triggerSecondaryHandler, secondaryTriggerEdge);  // Suspect this line is not needed
       break;
 
     case DECODER_MIATA_9905:
@@ -3971,3 +3888,7 @@ void changeFullToHalfSync(void)
     }
   }
 }
+
+#if defined(CORE_AVR)
+#pragma GCC pop_options
+#endif
